@@ -21,47 +21,50 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
+    # 🔹 Configure Maven Credentials (IMPORTANT)
+    - name: Configure Maven settings.xml
+      run: |
+        mkdir -p ~/.m2
+        cat <<EOF > ~/.m2/settings.xml
+        <settings>
+          <servers>
+            <server>
+              <id>nexus</id>
+              <username>${{ secrets.NEXUS_USERNAME }}</username>
+              <password>${{ secrets.NEXUS_PASSWORD }}</password>
+            </server>
+          </servers>
+        </settings>
+        EOF
+
     # 🔹 Build Steps
-    - name: Validate
-      run: mvn validate
-
-    - name: Compile
-      run: mvn compile
-
-    - name: Test
-      run: mvn test
-
-    - name: Package
+    - name: Build Application
       run: mvn clean package
 
     - name: Verify WAR file
       run: ls -lh target/
 
-    # 🔹 SonarQube Analysis
-    - name: SonarQube Scan
+    # 🔹 SonarQube Scan
+    - name: SonarQube Analysis
       run: |
         mvn sonar:sonar \
         -Dsonar.projectKey=train-ticket-reservation \
         -Dsonar.host.url=${{ secrets.SONAR_HOST }} \
         -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-    # 🔹 Upload Artifact to Nexus
-    - name: Upload to Nexus
-      run: |
-        mvn deploy -DskipTests \
-        -Dnexus.url=http://${{ secrets.NEXUS_HOST }}:8081/repository/maven-releases/ \
-        -Dnexus.username=${{ secrets.NEXUS_USERNAME }} \
-        -Dnexus.password=${{ secrets.NEXUS_PASSWORD }}
+    # 🔹 Deploy to Nexus
+    - name: Deploy to Nexus
+      run: mvn deploy -DskipTests
 
     # 🔹 Deploy to Tomcat (EC2)
-    - name: Deploy to Tomcat Server
+    - name: Deploy to Tomcat
       uses: appleboy/ssh-action@v1.0.0
       with:
         host: ${{ secrets.EC2_HOST }}
         username: ubuntu
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          echo "Deploying WAR to Tomcat..."
+          echo "Deploying to Tomcat..."
           sudo cp target/*.war /var/lib/tomcat9/webapps/
           sudo systemctl restart tomcat9
-          echo "Deployment completed!"
+          echo "Deployment Done!"
