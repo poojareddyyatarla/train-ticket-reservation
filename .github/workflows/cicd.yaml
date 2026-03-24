@@ -1,38 +1,67 @@
-name: ci/cd pipeline to deploy to tomcat
-on: 
+name: CI/CD Pipeline (Sonar + Nexus + Tomcat)
+
+on:
   push:
-    branches: master
+    branches:
+      - master
+
 jobs:
   build-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - name: checkout code
-        uses: actions/checkout@v3
-      
-      - name: set-up jdk
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'   # Updated Java version
-      
-      - name: validate with maven
-        run: mvn validate
+    # 🔹 Checkout Code
+    - name: Checkout Code
+      uses: actions/checkout@v3
 
-      - name: compile with maven
-        run: mvn compile
-      
-      - name: test with maven
-        run: mvn test
-      
-      - name: package with maven
-        run: mvn clean package
+    # 🔹 Setup Java
+    - name: Set up JDK
+      uses: actions/setup-java@v3
+      with:
+        distribution: 'temurin'
+        java-version: '17'
 
-      - name: verify WAR file
-        run: ls -lh target/
-        
-      - name: Sonar scan 
-        run: |
-           mvn clean verify sonar:sonar \
-            -Dsonar.projectKey=train-ticket-reservation \
-            -Dsonar.host.url="${{ secrets.SONAR_HOST }}" \
-            -Dsonar.login="${{ secrets.SONAR_TOKEN }}"
+    # 🔹 Build Steps
+    - name: Validate
+      run: mvn validate
+
+    - name: Compile
+      run: mvn compile
+
+    - name: Test
+      run: mvn test
+
+    - name: Package
+      run: mvn clean package
+
+    - name: Verify WAR file
+      run: ls -lh target/
+
+    # 🔹 SonarQube Analysis
+    - name: SonarQube Scan
+      run: |
+        mvn sonar:sonar \
+        -Dsonar.projectKey=train-ticket-reservation \
+        -Dsonar.host.url=${{ secrets.SONAR_HOST }} \
+        -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+
+    # 🔹 Upload Artifact to Nexus
+    - name: Upload to Nexus
+      run: |
+        mvn deploy -DskipTests \
+        -Dnexus.url=http://${{ secrets.NEXUS_HOST }}:8081/repository/maven-releases/ \
+        -Dnexus.username=${{ secrets.NEXUS_USERNAME }} \
+        -Dnexus.password=${{ secrets.NEXUS_PASSWORD }}
+
+    # 🔹 Deploy to Tomcat (EC2)
+    - name: Deploy to Tomcat Server
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          echo "Deploying WAR to Tomcat..."
+          sudo cp target/*.war /var/lib/tomcat9/webapps/
+          sudo systemctl restart tomcat9
+          echo "Deployment completed!"
